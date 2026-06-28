@@ -1,125 +1,32 @@
 const STORAGE_KEY = "lawnCareTracker.v2";
+const frequencyLabels = { 7: "Weekly", 10: "Every 10 days", 14: "Bi-weekly" };
 
-const frequencyLabels = {
-  7: "Weekly",
-  10: "Every 10 days",
-  14: "Bi-weekly"
-};
-
-const elements = {
-  tableBody: document.getElementById("customerTableBody"),
-  emptyState: document.getElementById("emptyState"),
-  search: document.getElementById("searchInput"),
-  filter: document.getElementById("statusFilter"),
-  customerDialog: document.getElementById("customerDialog"),
-  customerForm: document.getElementById("customerForm"),
-  visitDialog: document.getElementById("visitDialog"),
-  visitForm: document.getElementById("visitForm"),
-  historyDialog: document.getElementById("historyDialog"),
-  toast: document.getElementById("toast")
-};
-
-let state = loadState();
-let activeHistoryCustomerId = null;
+const body = document.getElementById("trackingBody");
+const emptyState = document.getElementById("emptyState");
+const toast = document.getElementById("toast");
 let toastTimer;
+let state = loadState();
+
+function makeId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function localDateString(date = new Date()) {
   const offset = date.getTimezoneOffset();
   return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
 }
 
-function parseDate(value) {
-  return new Date(`${value}T12:00:00`);
-}
-
 function addDays(value, days) {
-  const date = parseDate(value);
+  if (!value) return "";
+  const date = new Date(`${value}T12:00:00`);
   date.setDate(date.getDate() + Number(days));
   return localDateString(date);
 }
 
-function daysBetween(from, to) {
-  return Math.round((parseDate(to) - parseDate(from)) / 86400000);
-}
-
-function makeId(prefix) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function loadState() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored && Array.isArray(stored.customers) && Array.isArray(stored.visits)) return stored;
-  } catch (error) {
-    console.warn("Could not load saved tracker data", error);
-  }
-
-  const today = localDateString();
-  const originalCustomers = [
-    ["Dima", "417 Germain Manor"],
-    ["Randy Best", "1515 Shannon Cres"],
-    ["Abdul Razzaq", "1302 Hunter Road"],
-    ["Tony", "219 Edgemont Crest"],
-    ["Dawn", "905 6th Ave North"],
-    ["Trudy", "219 Greaves Crest"]
-  ];
-
-  return {
-    customers: originalCustomers.map(([name, address], index) => ({
-      id: makeId(`customer-${index}`),
-      name,
-      address,
-      phone: "",
-      price: 0,
-      frequency: 7,
-      startDate: addDays(today, index),
-      notes: "",
-      createdAt: new Date().toISOString()
-    })),
-    visits: []
-  };
-}
-
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function getCustomerVisits(customerId) {
-  return state.visits
-    .filter((visit) => visit.customerId === customerId)
-    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
-}
-
-function getSchedule(customer) {
-  const visits = getCustomerVisits(customer.id);
-  const latest = visits[0];
-  const nextDate = latest ? addDays(latest.date, customer.frequency) : customer.startDate;
-  const unpaid = visits.filter((visit) => visit.workStatus === "completed" && visit.paymentStatus === "unpaid");
-  return {
-    visits,
-    latest,
-    nextDate,
-    nextVisitNumber: visits.length + 1,
-    unpaid,
-    unpaidTotal: unpaid.reduce((sum, visit) => sum + Number(visit.amount || 0), 0)
-  };
-}
-
-function dateStatus(date) {
-  const difference = daysBetween(localDateString(), date);
-  if (difference < 0) return "overdue";
-  if (difference === 0) return "today";
-  if (difference <= 7) return "upcoming";
-  return "later";
-}
-
 function formatDate(value) {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(parseDate(value));
-}
-
-function formatMoney(value) {
-  return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(Number(value || 0));
+  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" })
+    .format(new Date(`${value}T12:00:00`));
 }
 
 function escapeHTML(value = "") {
@@ -131,276 +38,202 @@ function escapeHTML(value = "") {
     .replaceAll("'", "&#039;");
 }
 
-function dueText(date) {
-  const difference = daysBetween(localDateString(), date);
-  if (difference < 0) return `${Math.abs(difference)} day${Math.abs(difference) === 1 ? "" : "s"} overdue`;
-  if (difference === 0) return "Due today";
-  if (difference === 1) return "Due tomorrow";
-  return `Due in ${difference} days`;
+function loadState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (saved && Array.isArray(saved.customers) && Array.isArray(saved.visits)) return saved;
+  } catch (error) {
+    console.warn("Saved data could not be loaded", error);
+  }
+  return { customers: [], visits: [] };
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function customerVisits(customerId) {
+  return state.visits
+    .filter((visit) => visit.customerId === customerId)
+    .sort((a, b) => Number(a.visitNumber) - Number(b.visitNumber));
+}
+
+function nextVisitNumber(customerId) {
+  const visits = customerVisits(customerId);
+  return visits.length ? Math.max(...visits.map((visit) => Number(visit.visitNumber) || 0)) + 1 : 1;
+}
+
+function expectedDate(customer) {
+  const visits = customerVisits(customer.id).filter((visit) => visit.date);
+  const latest = visits[visits.length - 1];
+  return latest ? addDays(latest.date, customer.frequency) : "";
 }
 
 function render() {
-  renderMetrics();
-  renderCustomers();
+  emptyState.hidden = state.customers.length !== 0;
+  body.innerHTML = state.customers.map((customer) => renderCustomer(customer)).join("");
 }
 
-function renderMetrics() {
-  const schedules = state.customers.map((customer) => getSchedule(customer));
-  const statuses = schedules.map((schedule) => dateStatus(schedule.nextDate));
-  const unpaidVisits = state.visits.filter((visit) => visit.workStatus === "completed" && visit.paymentStatus === "unpaid");
+function renderCustomer(customer) {
+  const visits = customerVisits(customer.id);
+  const rows = visits.map((visit) => renderVisit(customer, visit)).join("");
+  const nextNumber = nextVisitNumber(customer.id);
+  const dueDate = expectedDate(customer);
 
-  document.getElementById("overdueCount").textContent = statuses.filter((status) => status === "overdue").length;
-  document.getElementById("todayCount").textContent = statuses.filter((status) => status === "today").length;
-  document.getElementById("upcomingCount").textContent = statuses.filter((status) => status === "upcoming").length;
-  document.getElementById("unpaidTotal").textContent = formatMoney(unpaidVisits.reduce((sum, visit) => sum + Number(visit.amount || 0), 0));
-  document.getElementById("unpaidCount").textContent = `${unpaidVisits.length} completed visit${unpaidVisits.length === 1 ? "" : "s"}`;
+  return `
+    <tr class="customer-row" data-customer-row="${customer.id}">
+      <td>
+        <div class="customer-cell">
+          <input type="text" value="${escapeHTML(customer.name)}" placeholder="Customer name" aria-label="Customer name" data-customer-field="name" data-customer-id="${customer.id}">
+          <input type="text" value="${escapeHTML(customer.address)}" placeholder="Address" aria-label="Address" data-customer-field="address" data-customer-id="${customer.id}">
+        </div>
+      </td>
+      <td>
+        <select aria-label="Service frequency for ${escapeHTML(customer.name || "customer")}" data-customer-field="frequency" data-customer-id="${customer.id}">
+          <option value="7" ${Number(customer.frequency) === 7 ? "selected" : ""}>Weekly</option>
+          <option value="10" ${Number(customer.frequency) === 10 ? "selected" : ""}>Every 10 days</option>
+          <option value="14" ${Number(customer.frequency) === 14 ? "selected" : ""}>Bi-weekly</option>
+        </select>
+      </td>
+      <td colspan="7"><span class="customer-label">${visits.length} completed visit${visits.length === 1 ? "" : "s"}</span></td>
+      <td><button class="icon-button" type="button" title="Delete customer" aria-label="Delete ${escapeHTML(customer.name || "customer")}" data-delete-customer="${customer.id}">×</button></td>
+    </tr>
+    ${rows}
+    <tr class="visit-row new-visit-row">
+      <td><span class="new-visit-label">Enter service date →</span></td>
+      <td><span class="customer-meta">${frequencyLabels[customer.frequency]}</span></td>
+      <td><span class="visit-number">#${nextNumber}</span></td>
+      <td><input type="date" aria-label="Date served for visit ${nextNumber}" data-new-visit="${customer.id}"></td>
+      <td><div class="next-date">${dueDate ? `<small>Expected</small><strong>${formatDate(dueDate)}</strong>` : `<small>Calculated after service</small>`}</div></td>
+      <td></td><td></td><td></td><td></td><td></td>
+    </tr>`;
 }
 
-function customerMatchesFilter(customer, query, filter) {
-  const schedule = getSchedule(customer);
-  const searchTarget = `${customer.name} ${customer.address} ${customer.phone}`.toLowerCase();
-  if (query && !searchTarget.includes(query)) return false;
-  if (filter === "all") return true;
-  if (filter === "unpaid") return schedule.unpaid.length > 0;
-  return dateStatus(schedule.nextDate) === filter;
+function renderVisit(customer, visit) {
+  const nextDate = addDays(visit.date, customer.frequency);
+  const paid = visit.paymentStatus === "paid";
+  const reminded = visit.reminder === "sent";
+  return `
+    <tr class="visit-row" data-visit-row="${visit.id}">
+      <td></td>
+      <td></td>
+      <td><span class="visit-number">#${visit.visitNumber}</span></td>
+      <td><input type="date" value="${visit.date || ""}" aria-label="Date served for visit ${visit.visitNumber}" data-visit-field="date" data-visit-id="${visit.id}"></td>
+      <td><div class="next-date"><strong>${formatDate(nextDate)}</strong><small>${frequencyLabels[customer.frequency]}</small></div></td>
+      <td><input type="text" value="${escapeHTML(visit.teamMember || "")}" placeholder="Name" aria-label="Served by for visit ${visit.visitNumber}" data-visit-field="teamMember" data-visit-id="${visit.id}"></td>
+      <td><input type="text" value="${escapeHTML(visit.comments || "")}" placeholder="Optional notes" aria-label="Comments for visit ${visit.visitNumber}" data-visit-field="comments" data-visit-id="${visit.id}"></td>
+      <td class="check-cell"><input type="checkbox" ${paid ? "checked" : ""} aria-label="Payment received for visit ${visit.visitNumber}" data-visit-field="paymentStatus" data-visit-id="${visit.id}"></td>
+      <td class="check-cell"><input type="checkbox" ${reminded ? "checked" : ""} aria-label="Reminder sent for visit ${visit.visitNumber}" data-visit-field="reminder" data-visit-id="${visit.id}"></td>
+      <td><button class="icon-button" type="button" title="Delete visit" aria-label="Delete visit ${visit.visitNumber}" data-delete-visit="${visit.id}">×</button></td>
+    </tr>`;
 }
 
-function renderCustomers() {
-  const query = elements.search.value.trim().toLowerCase();
-  const filter = elements.filter.value;
-  const customers = state.customers
-    .filter((customer) => customerMatchesFilter(customer, query, filter))
-    .sort((a, b) => getSchedule(a).nextDate.localeCompare(getSchedule(b).nextDate) || a.name.localeCompare(b.name));
-
-  elements.tableBody.innerHTML = customers.map((customer) => {
-    const schedule = getSchedule(customer);
-    const status = dateStatus(schedule.nextDate);
-    const payment = schedule.unpaid.length
-      ? `<span class="payment-badge unpaid">${schedule.unpaid.length} unpaid · ${formatMoney(schedule.unpaidTotal)}</span>`
-      : schedule.visits.length
-        ? `<span class="payment-badge paid">✓ Up to date</span>`
-        : `<span class="payment-badge none">No visits</span>`;
-
-    return `
-      <tr>
-        <td>
-          <button class="customer-name-button" data-action="history" data-id="${customer.id}" type="button">
-            <span class="customer-name">${escapeHTML(customer.name)}</span>
-            <span class="customer-meta">${escapeHTML(customer.address)}</span>
-          </button>
-        </td>
-        <td><span class="plan-label">${frequencyLabels[customer.frequency] || `Every ${customer.frequency} days`}</span></td>
-        <td><span class="date-main">${formatDate(schedule.nextDate)}</span><span class="due-label ${status}">${dueText(schedule.nextDate)}</span></td>
-        <td><span class="visit-number">#${schedule.nextVisitNumber}</span></td>
-        <td>${schedule.latest ? `<span class="date-main">${formatDate(schedule.latest.date)}</span><span class="customer-meta">${escapeHTML(schedule.latest.teamMember || "No crew recorded")}</span>` : "—"}</td>
-        <td>${payment}</td>
-        <td><div class="row-actions"><button class="button secondary" data-action="history" data-id="${customer.id}" type="button">History</button><button class="button primary" data-action="visit" data-id="${customer.id}" type="button">Record visit</button></div></td>
-      </tr>`;
-  }).join("");
-
-  elements.emptyState.hidden = customers.length !== 0;
-}
-
-function openCustomerDialog(customerId = null) {
-  const customer = state.customers.find((item) => item.id === customerId);
-  elements.customerForm.reset();
-  document.getElementById("customerId").value = customer?.id || "";
-  document.getElementById("customerDialogTitle").textContent = customer ? "Edit customer" : "Add customer";
-  document.getElementById("deleteCustomerButton").hidden = !customer;
-  document.getElementById("customerName").value = customer?.name || "";
-  document.getElementById("customerAddress").value = customer?.address || "";
-  document.getElementById("customerPhone").value = customer?.phone || "";
-  document.getElementById("customerPrice").value = customer?.price || "";
-  document.getElementById("customerFrequency").value = String(customer?.frequency || 7);
-  document.getElementById("customerStartDate").value = customer?.startDate || localDateString();
-  document.getElementById("customerNotes").value = customer?.notes || "";
-  elements.customerDialog.showModal();
-  setTimeout(() => document.getElementById("customerName").focus(), 0);
-}
-
-function saveCustomer(event) {
-  event.preventDefault();
-  const id = document.getElementById("customerId").value;
-  const existing = state.customers.find((customer) => customer.id === id);
+function addCustomer() {
   const customer = {
-    id: existing?.id || makeId("customer"),
-    name: document.getElementById("customerName").value.trim(),
-    address: document.getElementById("customerAddress").value.trim(),
-    phone: document.getElementById("customerPhone").value.trim(),
-    price: Number(document.getElementById("customerPrice").value || 0),
-    frequency: Number(document.getElementById("customerFrequency").value),
-    startDate: document.getElementById("customerStartDate").value,
-    notes: document.getElementById("customerNotes").value.trim(),
-    createdAt: existing?.createdAt || new Date().toISOString()
+    id: makeId("customer"),
+    name: "",
+    address: "",
+    phone: "",
+    price: 0,
+    frequency: 7,
+    startDate: "",
+    notes: "",
+    createdAt: new Date().toISOString()
   };
-
-  if (existing) Object.assign(existing, customer);
-  else state.customers.push(customer);
+  state.customers.push(customer);
   saveState();
-  elements.customerDialog.close();
   render();
-  showToast(existing ? "Customer updated" : "Customer added");
+  const input = document.querySelector(`[data-customer-id="${customer.id}"][data-customer-field="name"]`);
+  input?.focus();
 }
 
-function deleteCustomer() {
-  const id = document.getElementById("customerId").value;
-  const customer = state.customers.find((item) => item.id === id);
-  if (!customer) return;
-  if (!confirm(`Delete ${customer.name} and all of their visit history? This cannot be undone.`)) return;
-  state.customers = state.customers.filter((item) => item.id !== id);
-  state.visits = state.visits.filter((visit) => visit.customerId !== id);
-  saveState();
-  elements.customerDialog.close();
-  render();
-  showToast("Customer deleted");
-}
-
-function openVisitDialog(customerId) {
-  const customer = state.customers.find((item) => item.id === customerId);
-  if (!customer) return;
-  const schedule = getSchedule(customer);
-  elements.visitForm.reset();
-  document.getElementById("visitCustomerId").value = customer.id;
-  document.getElementById("visitId").value = "";
-  document.getElementById("visitCustomerLabel").textContent = customer.name;
-  document.getElementById("visitNumberLabel").textContent = `#${schedule.nextVisitNumber}`;
-  document.getElementById("visitDate").value = schedule.nextDate;
-  document.getElementById("visitAmount").value = customer.price || "";
-  document.getElementById("visitPaymentStatus").value = "unpaid";
-  document.getElementById("visitReminder").value = "not-sent";
-  document.getElementById("visitWorkStatus").value = "completed";
-  elements.visitDialog.showModal();
-  setTimeout(() => document.getElementById("visitDate").focus(), 0);
-}
-
-function saveVisit(event) {
-  event.preventDefault();
-  const customerId = document.getElementById("visitCustomerId").value;
-  const customer = state.customers.find((item) => item.id === customerId);
-  if (!customer) return;
-  const schedule = getSchedule(customer);
+function createVisit(customerId, date) {
+  if (!date) return;
   const visit = {
     id: makeId("visit"),
     customerId,
-    visitNumber: schedule.nextVisitNumber,
-    date: document.getElementById("visitDate").value,
-    teamMember: document.getElementById("visitTeamMember").value.trim(),
-    amount: Number(document.getElementById("visitAmount").value || 0),
-    paymentStatus: document.getElementById("visitPaymentStatus").value,
-    reminder: document.getElementById("visitReminder").value,
-    workStatus: document.getElementById("visitWorkStatus").value,
-    comments: document.getElementById("visitComments").value.trim(),
+    visitNumber: nextVisitNumber(customerId),
+    date,
+    teamMember: "",
+    amount: 0,
+    paymentStatus: "unpaid",
+    reminder: "not-sent",
+    workStatus: "completed",
+    comments: "",
     createdAt: new Date().toISOString()
   };
   state.visits.push(visit);
   saveState();
-  elements.visitDialog.close();
   render();
-  if (elements.historyDialog.open) openHistory(customerId, true);
-  showToast(`Visit #${visit.visitNumber} saved. Next date calculated.`);
+  document.querySelector(`[data-visit-id="${visit.id}"][data-visit-field="teamMember"]`)?.focus();
+  showToast(`Visit #${visit.visitNumber} added. Next date calculated.`);
 }
 
-function openHistory(customerId, refresh = false) {
-  const customer = state.customers.find((item) => item.id === customerId);
+function updateCustomer(input) {
+  const customer = state.customers.find((item) => item.id === input.dataset.customerId);
   if (!customer) return;
-  activeHistoryCustomerId = customerId;
-  const visits = getCustomerVisits(customerId);
-  document.getElementById("historyTitle").textContent = customer.name;
-  document.getElementById("historyAddress").textContent = `${customer.address} · ${frequencyLabels[customer.frequency]}`;
-  const notes = document.getElementById("historyNotes");
-  notes.hidden = !customer.notes;
-  notes.textContent = customer.notes;
-  document.getElementById("historyList").innerHTML = visits.length ? visits.map((visit) => `
-    <article class="history-item">
-      <div class="history-number">Visit #${visit.visitNumber}</div>
-      <div>
-        <h3>${formatDate(visit.date)} · ${escapeHTML(visit.teamMember)}</h3>
-        <span class="payment-badge ${visit.paymentStatus === "paid" ? "paid" : visit.paymentStatus === "unpaid" ? "unpaid" : "none"}">${visit.paymentStatus === "paid" ? "Payment received" : visit.paymentStatus === "unpaid" ? "Payment not received" : "No payment required"}</span>
-        <span class="payment-badge none">${visit.reminder === "sent" ? "Reminder sent" : visit.reminder === "not-needed" ? "No reminder needed" : "Reminder not sent"}</span>
-        ${visit.comments ? `<p>${escapeHTML(visit.comments)}</p>` : ""}
-      </div>
-      <div class="history-details"><strong>${formatMoney(visit.amount)}</strong><span>${visit.workStatus === "completed" ? "Completed" : "Skipped"}</span>${visit.paymentStatus === "unpaid" ? `<button class="button secondary mark-paid" data-visit-id="${visit.id}" type="button">Mark paid</button>` : ""}</div>
-    </article>`).join("") : `<div class="history-empty">No visits recorded yet.</div>`;
-  if (!refresh) elements.historyDialog.showModal();
+  customer[input.dataset.customerField] = input.dataset.customerField === "frequency" ? Number(input.value) : input.value;
+  saveState();
+  if (input.dataset.customerField === "frequency") render();
 }
 
-function markVisitPaid(visitId) {
-  const visit = state.visits.find((item) => item.id === visitId);
+function updateVisit(input) {
+  const visit = state.visits.find((item) => item.id === input.dataset.visitId);
   if (!visit) return;
-  visit.paymentStatus = "paid";
+  const field = input.dataset.visitField;
+  if (field === "paymentStatus") visit.paymentStatus = input.checked ? "paid" : "unpaid";
+  else if (field === "reminder") visit.reminder = input.checked ? "sent" : "not-sent";
+  else visit[field] = input.value;
+  saveState();
+  if (field === "date") render();
+}
+
+function deleteCustomer(customerId) {
+  const customer = state.customers.find((item) => item.id === customerId);
+  if (!customer || !confirm(`Delete ${customer.name || "this customer"} and all visit rows?`)) return;
+  state.customers = state.customers.filter((item) => item.id !== customerId);
+  state.visits = state.visits.filter((visit) => visit.customerId !== customerId);
   saveState();
   render();
-  openHistory(visit.customerId, true);
-  showToast("Payment marked as received");
 }
 
-function exportCsv() {
-  const headers = ["Customer", "Address", "Phone", "Frequency", "Visit Number", "Service Date", "Team Member", "Work Status", "Amount", "Payment", "Reminder", "Comments", "Next Scheduled Date"];
-  const rows = [];
-  state.customers.forEach((customer) => {
-    const schedule = getSchedule(customer);
-    if (!schedule.visits.length) {
-      rows.push([customer.name, customer.address, customer.phone, frequencyLabels[customer.frequency], "", "", "", "", "", "", "", customer.notes, schedule.nextDate]);
-    } else {
-      schedule.visits.forEach((visit) => rows.push([customer.name, customer.address, customer.phone, frequencyLabels[customer.frequency], visit.visitNumber, visit.date, visit.teamMember, visit.workStatus, visit.amount, visit.paymentStatus, visit.reminder, visit.comments, schedule.nextDate]));
-    }
-  });
-  const csv = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n");
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
-  link.download = `lawn-care-tracker-${localDateString()}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
-  showToast("CSV backup downloaded");
+function deleteVisit(visitId) {
+  const visit = state.visits.find((item) => item.id === visitId);
+  if (!visit || !confirm(`Delete visit #${visit.visitNumber}?`)) return;
+  state.visits = state.visits.filter((item) => item.id !== visitId);
+  const remaining = customerVisits(visit.customerId);
+  remaining.forEach((item, index) => item.visitNumber = index + 1);
+  saveState();
+  render();
 }
 
 function showToast(message) {
   clearTimeout(toastTimer);
-  elements.toast.textContent = message;
-  elements.toast.classList.add("show");
-  toastTimer = setTimeout(() => elements.toast.classList.remove("show"), 2800);
+  toast.textContent = message;
+  toast.classList.add("show");
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
 }
 
-document.getElementById("todayLabel").textContent = new Intl.DateTimeFormat("en-CA", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date());
-document.getElementById("addCustomerButton").addEventListener("click", () => openCustomerDialog());
-document.getElementById("exportButton").addEventListener("click", exportCsv);
-document.getElementById("deleteCustomerButton").addEventListener("click", deleteCustomer);
-elements.customerForm.addEventListener("submit", saveCustomer);
-elements.visitForm.addEventListener("submit", saveVisit);
-elements.search.addEventListener("input", renderCustomers);
-elements.filter.addEventListener("change", renderCustomers);
+document.getElementById("addCustomerButton").addEventListener("click", addCustomer);
 
-elements.tableBody.addEventListener("click", (event) => {
-  const action = event.target.closest("[data-action]");
-  if (!action) return;
-  if (action.dataset.action === "visit") openVisitDialog(action.dataset.id);
-  if (action.dataset.action === "history") openHistory(action.dataset.id);
+body.addEventListener("change", (event) => {
+  const input = event.target;
+  if (input.dataset.newVisit) createVisit(input.dataset.newVisit, input.value);
+  else if (input.dataset.customerField) updateCustomer(input);
+  else if (input.dataset.visitField) updateVisit(input);
 });
 
-document.getElementById("historyList").addEventListener("click", (event) => {
-  const button = event.target.closest(".mark-paid");
-  if (button) markVisitPaid(button.dataset.visitId);
+body.addEventListener("input", (event) => {
+  const input = event.target;
+  if (input.dataset.customerField && input.dataset.customerField !== "frequency") updateCustomer(input);
+  if (input.dataset.visitField && ["teamMember", "comments"].includes(input.dataset.visitField)) updateVisit(input);
 });
 
-document.getElementById("editCustomerButton").addEventListener("click", () => {
-  elements.historyDialog.close();
-  openCustomerDialog(activeHistoryCustomerId);
+body.addEventListener("click", (event) => {
+  const customerButton = event.target.closest("[data-delete-customer]");
+  const visitButton = event.target.closest("[data-delete-visit]");
+  if (customerButton) deleteCustomer(customerButton.dataset.deleteCustomer);
+  if (visitButton) deleteVisit(visitButton.dataset.deleteVisit);
 });
 
-document.getElementById("historyAddVisitButton").addEventListener("click", () => {
-  elements.historyDialog.close();
-  openVisitDialog(activeHistoryCustomerId);
-});
-
-document.querySelectorAll(".close-dialog").forEach((button) => {
-  button.addEventListener("click", () => button.closest("dialog").close());
-});
-
-document.querySelectorAll("dialog").forEach((dialog) => {
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
-  });
-});
-
-saveState();
 render();

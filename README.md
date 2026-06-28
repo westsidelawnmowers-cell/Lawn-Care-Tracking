@@ -1,19 +1,12 @@
-# Lawn Care Service Tracker
+# Lawn Care Tracking Sheet
 
-A mobile-friendly customer, recurring service, visit, payment, and reminder tracker built with plain HTML, CSS, and JavaScript.
+A simple spreadsheet-style lawn service tracker.
 
-## Use
+- Add customers directly in rows
+- Choose weekly, every 10 days, or bi-weekly service
+- Enter the actual service date
+- Automatically calculate the next visit date and create the next visit row
+- Record the team member, comments, payment received, and reminder sent
+- Save changes automatically in the browser
 
-Open `index.html` in a modern browser. Data is stored in that browser's local storage. Use **Export CSV** regularly for an external backup.
-
-## Current capabilities
-
-- Weekly, 10-day, and bi-weekly recurring schedules
-- Automatic visit numbering and next-service calculation
-- Team member, service date, comments, reminder, and payment tracking
-- Overdue, due-today, upcoming, and unpaid dashboard totals
-- Customer search and filters
-- Service history and one-click payment updates
-- CSV export
-
-This version does not yet sync between devices or provide user accounts. That requires a hosted database and authentication.
+Open `index.html` in a modern browser to use it. Data remains on that browser and device.

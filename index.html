@@ -3,166 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#143d2a">
-  <title>Lawn Care Service Tracker</title>
+  <meta name="theme-color" content="#214c35">
+  <title>Lawn Care Tracking Sheet</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">L</span>
-      <div>
-        <strong>Lawn Care Tracker</strong>
-        <span>Service schedule & payments</span>
-      </div>
+  <header>
+    <div>
+      <h1>Lawn Care Tracking Sheet</h1>
+      <p>Add customers, enter the date served, and the next visit is calculated automatically.</p>
     </div>
-    <div class="top-actions">
-      <button class="button secondary" id="exportButton" type="button">Export CSV</button>
-      <button class="button primary" id="addCustomerButton" type="button">+ Add customer</button>
-    </div>
+    <button id="addCustomerButton" class="button primary" type="button">+ Add customer row</button>
   </header>
 
-  <main class="page-shell">
-    <section class="welcome">
-      <div>
-        <p class="eyebrow" id="todayLabel"></p>
-        <h1>Service dashboard</h1>
-        <p>See what is due, record completed work, and follow up on unpaid visits.</p>
-      </div>
-    </section>
-
-    <section class="metrics" aria-label="Business summary">
-      <article class="metric-card urgent"><span>Overdue</span><strong id="overdueCount">0</strong><small>visits need attention</small></article>
-      <article class="metric-card"><span>Due today</span><strong id="todayCount">0</strong><small>scheduled visits</small></article>
-      <article class="metric-card"><span>Next 7 days</span><strong id="upcomingCount">0</strong><small>upcoming visits</small></article>
-      <article class="metric-card money"><span>Unpaid</span><strong id="unpaidTotal">$0.00</strong><small id="unpaidCount">0 completed visits</small></article>
-    </section>
-
-    <section class="workspace">
-      <div class="section-heading">
-        <div>
-          <h2>Customer schedule</h2>
-          <p>Next visit is calculated from the most recent completed service.</p>
-        </div>
-        <div class="filters">
-          <label class="search-field">
-            <span aria-hidden="true">⌕</span>
-            <input id="searchInput" type="search" placeholder="Search customer or address" aria-label="Search customers">
-          </label>
-          <select id="statusFilter" aria-label="Filter schedule">
-            <option value="all">All customers</option>
-            <option value="overdue">Overdue</option>
-            <option value="today">Due today</option>
-            <option value="upcoming">Next 7 days</option>
-            <option value="unpaid">Has unpaid visit</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Service plan</th>
-              <th>Next visit</th>
-              <th>Visit #</th>
-              <th>Last service</th>
-              <th>Payment</th>
-              <th><span class="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody id="customerTableBody"></tbody>
-        </table>
-        <div class="empty-state" id="emptyState" hidden>
-          <div class="empty-icon">✓</div>
-          <h3>No customers match this view</h3>
-          <p>Change the filter or add a new customer.</p>
-        </div>
-      </div>
-    </section>
-
-    <p class="storage-note">Data is saved in this browser on this device. Use Export CSV regularly as a backup.</p>
-  </main>
-
-  <dialog id="customerDialog">
-    <form id="customerForm" class="dialog-card">
-      <div class="dialog-heading">
-        <div><p class="eyebrow">Customer record</p><h2 id="customerDialogTitle">Add customer</h2></div>
-        <button class="icon-button close-dialog" type="button" aria-label="Close">×</button>
-      </div>
-      <input id="customerId" type="hidden">
-      <div class="form-grid">
-        <label class="full"><span>Customer name *</span><input id="customerName" required autocomplete="name"></label>
-        <label class="full"><span>Service address *</span><input id="customerAddress" required autocomplete="street-address"></label>
-        <label><span>Phone</span><input id="customerPhone" type="tel" autocomplete="tel"></label>
-        <label><span>Default price</span><input id="customerPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
-        <label><span>Service frequency *</span>
-          <select id="customerFrequency" required>
-            <option value="7">Weekly (every 7 days)</option>
-            <option value="10">Every 10 days</option>
-            <option value="14">Bi-weekly (every 14 days)</option>
-          </select>
-        </label>
-        <label><span>First / next service date *</span><input id="customerStartDate" type="date" required></label>
-        <label class="full"><span>Property notes</span><textarea id="customerNotes" rows="3" placeholder="Gate code, mowing instructions, pets, preferred contact…"></textarea></label>
-      </div>
-      <div class="dialog-actions">
-        <button class="button danger ghost" id="deleteCustomerButton" type="button" hidden>Delete</button>
-        <span class="action-spacer"></span>
-        <button class="button secondary close-dialog" type="button">Cancel</button>
-        <button class="button primary" type="submit">Save customer</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="visitDialog">
-    <form id="visitForm" class="dialog-card">
-      <div class="dialog-heading">
-        <div><p class="eyebrow" id="visitCustomerLabel"></p><h2 id="visitDialogTitle">Record visit</h2></div>
-        <button class="icon-button close-dialog" type="button" aria-label="Close">×</button>
-      </div>
-      <input id="visitCustomerId" type="hidden">
-      <input id="visitId" type="hidden">
-      <div class="visit-number-banner"><span>Service visit</span><strong id="visitNumberLabel">#1</strong></div>
-      <div class="form-grid">
-        <label><span>Service date *</span><input id="visitDate" type="date" required></label>
-        <label><span>Team member *</span><input id="visitTeamMember" required placeholder="Employee name" autocomplete="name"></label>
-        <label><span>Amount charged</span><input id="visitAmount" type="number" min="0" step="0.01" inputmode="decimal"></label>
-        <label><span>Payment status</span>
-          <select id="visitPaymentStatus"><option value="unpaid">Not received</option><option value="paid">Received</option><option value="not-required">No payment required</option></select>
-        </label>
-        <label><span>Reminder</span>
-          <select id="visitReminder"><option value="not-sent">Not sent</option><option value="sent">Reminder sent</option><option value="not-needed">Not needed</option></select>
-        </label>
-        <label><span>Work status</span>
-          <select id="visitWorkStatus"><option value="completed">Completed</option><option value="skipped">Skipped / customer requested</option></select>
-        </label>
-        <label class="full"><span>Visit comments</span><textarea id="visitComments" rows="4" placeholder="Work completed, lawn condition, issues, follow-up needed…"></textarea></label>
-      </div>
-      <div class="dialog-actions">
-        <span class="action-spacer"></span>
-        <button class="button secondary close-dialog" type="button">Cancel</button>
-        <button class="button primary" type="submit">Save visit</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="historyDialog" class="wide-dialog">
-    <div class="dialog-card">
-      <div class="dialog-heading">
-        <div><p class="eyebrow">Service history</p><h2 id="historyTitle"></h2><p id="historyAddress" class="muted"></p></div>
-        <button class="icon-button close-dialog" type="button" aria-label="Close">×</button>
-      </div>
-      <div class="customer-note" id="historyNotes" hidden></div>
-      <div class="history-list" id="historyList"></div>
-      <div class="dialog-actions">
-        <button class="button secondary" id="editCustomerButton" type="button">Edit customer</button>
-        <span class="action-spacer"></span>
-        <button class="button primary" id="historyAddVisitButton" type="button">+ Record visit</button>
+  <main>
+    <div class="sheet-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="customer-column">Customer / Address</th>
+            <th>Frequency</th>
+            <th>Visit</th>
+            <th>Date served</th>
+            <th>Next visit</th>
+            <th>Served by</th>
+            <th class="comments-column">Comments</th>
+            <th>Payment received</th>
+            <th>Reminder sent</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="trackingBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" hidden>
+        No customers yet. Select <strong>+ Add customer row</strong> to begin.
       </div>
     </div>
-  </dialog>
+    <p class="save-note"><span class="save-dot"></span> Changes save automatically in this browser.</p>
+  </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="script.js"></script>
